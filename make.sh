@@ -13,4 +13,5 @@ if [[ $SAMTOOLPATH == "" ]]; then
 	exit
 fi
 
-g++ -o geneRPKM -I$SAMTOOLPATH -I$CPPUTILCLASSES -I$CPPBIOCLASSES -L$SAMTOOLPATH -lbam -lz -lm geneRPKM_main.cpp AdvGetOptCpp/AdvGetOpt.cpp $SAMTOOLPATH/libbam.a 
+#g++ -o geneRPKM -I$SAMTOOLPATH -I$CPPUTILCLASSES -I$CPPBIOCLASSES -L$SAMTOOLPATH -lbam -lz -lm geneRPKM_main.cpp AdvGetOptCpp/AdvGetOpt.cpp $SAMTOOLPATH/libbam.a 
+g++ -o filterMaxHits -I$SAMTOOLPATH -I$CPPUTILCLASSES -I$CPPBIOCLASSES -L$SAMTOOLPATH -lbam -lz -lm filterMaxHits_main.cpp AdvGetOptCpp/AdvGetOpt.cpp $SAMTOOLPATH/libbam.a
