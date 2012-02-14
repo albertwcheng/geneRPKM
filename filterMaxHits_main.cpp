@@ -46,7 +46,7 @@ public:
 	unsigned int maxHits;
 	bool addNH;
 	bool useNHFlag;
-
+	string printStatFile;
 };
 
 
@@ -61,7 +61,7 @@ void printUsage(string programName){
 	outArgsHelp("--max-hits hits","specify the maximum number of hits to retain the read");
 	outArgsHelp("--add-NH","Add NH:i:<numHits> to the aux fields if not exists");
 	outArgsHelp("--use-NH-flag","Use NH flag to filter which is way faster if it is present also if NH flag is consistent such that Left max hits == right max hits if both >0");
-	
+	outArgsHelp("--print-NH-stat-to","print NH stat to a file. either qname<tab>NH or qname<tab>firstAlgNH<tab>secondAlgNH");
 	
 }
 
@@ -127,6 +127,8 @@ int runGetUniqReads_twoPass(OptionStruct& opts){
 	unsigned int total;
 	total=0;
 	
+	
+	
 	map<string,BamReader::BamAuxStruct> auxfields;
 	
 	while(samread(bf,bamInfo)>=0){
@@ -173,80 +175,133 @@ int runGetUniqReads_twoPass(OptionStruct& opts){
 	
 	samclose(bf);
 	
+	cerr<<"inReads\t"<<total<<endl;
+	
 	
 	//check if left hits == right hits
 	
-	/*for(map<string,CountStruct>::iterator i=readHitsMap.begin();i!=readHitsMap.end();i++)
-	{
-		cout<<i->first<<"\t"<<i->second.firstAlignmentCount<<"\t"<<i->second.secondAlignmentCount<<endl;
-	}*/
 	
-
+	if(opts.printStatFile!=""){
+		ofstream statOutFile(opts.printStatFile.c_str());
+		
+		unsigned int totalFirstAlignmentCount=0;
+		unsigned int totalSecondAlignmentCount=0;
+		
+		unsigned int totalUniqFirstAlignmentCount=0;
+		unsigned int totalUniqSecondAlignmentCount=0;
+		
+		
+		statOutFile<<"QName\tFirstAlignmentCount\tSecondAlignmentCount"<<endl;
+		
+		
+		for(map<string,CountStruct>::iterator i=readHitsMap.begin();i!=readHitsMap.end();i++)
+		{
+			statOutFile<<i->first<<"\t"<<i->second.firstAlignmentCount<<"\t"<<i->second.secondAlignmentCount<<endl;
+			totalFirstAlignmentCount+=i->second.firstAlignmentCount;
+			totalSecondAlignmentCount+=i->second.secondAlignmentCount;
+			
+			if(i->second.firstAlignmentCount>0){
+				totalUniqFirstAlignmentCount++;
+			}
+			
+			if(i->second.secondAlignmentCount>0){
+				totalUniqSecondAlignmentCount++;	
+			}
+				
+		}
+		
+		statOutFile<<"TotalAlignments"<<"\t"<<totalFirstAlignmentCount<<"\t"<<totalSecondAlignmentCount<<endl;
+		
+		statOutFile<<"TotalMapped"<<"\t"<<totalUniqFirstAlignmentCount<<"\t"<<totalUniqSecondAlignmentCount<<endl;
+		
+		statOutFile<<"TotalMappedUnion"<<"\t"<<readHitsMap.size()<<"\t"<<readHitsMap.size()<<endl;
+		
+		statOutFile.close();
+		
+		cerr<<"TotalAlignments"<<"\tread1="<<totalFirstAlignmentCount<<"\tread2="<<totalSecondAlignmentCount<<endl;
+		cerr<<"TotalMapped"<<"\tread1="<<totalUniqFirstAlignmentCount<<"\tread2="<<totalUniqSecondAlignmentCount<<endl;
+		cerr<<"TotalMappedUnion"<<"\t"<<readHitsMap.size()<<endl;
+	}
 	//second pass
 	
-	bf = samopen(opts.bamfile.c_str(),"rb",0);
-	
-	samfile_t* out = samopen(opts.outfile.c_str(), "wb", bf->header);
-	
-	if(!bf){
-		cerr<<"bam file "<<opts.bamfile<<" cannot be open"<<endl;
-		return 1;
-	}
-	total=0;
 	
 	
-	
-	
-	while(samread(bf,bamInfo)>=0){
-		total++;
-		if(total%1000000==1){
-			cerr<<"second pass: passing through read "<<total<<endl;
-		}
+	if(opts.outfile!="")
+	{
 		
-		string qname=BamReader::getQName(bamInfo);
-		//unsigned char qual=BamReader::getMappingQual(bamInfo);
+		int outTotal=0;
 		
-		map<string,CountStruct>::iterator i=readHitsMap.find(qname);
-		if(i==readHitsMap.end()){
-			cerr<<"cannot found read "<<qname<<" in second pass?";
+		bf = samopen(opts.bamfile.c_str(),"rb",0);
+		
+		samfile_t* out= samopen(opts.outfile.c_str(), "wb", bf->header);
+		
+		if(!bf){
+			cerr<<"bam file "<<opts.bamfile<<" cannot be open"<<endl;
+			return 1;
 		}
-		else{
+		total=0;
+		
+		
+		
+		
+		while(samread(bf,bamInfo)>=0){
+			total++;
+			if(total%1000000==1){
+				cerr<<"second pass: passing through read "<<total<<endl;
+			}
 			
-
-			if(i->second.firstAlignmentCount<=opts.maxHits && i->second.secondAlignmentCount<=opts.maxHits){
-				//only output these:
-				//TODO: do we need the best?
-				//can we directly write to a bam file?
+			string qname=BamReader::getQName(bamInfo);
+			//unsigned char qual=BamReader::getMappingQual(bamInfo);
+			
+			map<string,CountStruct>::iterator i=readHitsMap.find(qname);
+			if(i==readHitsMap.end()){
+				cerr<<"cannot found read "<<qname<<" in second pass?";
+			}
+			else{
 				
-				if(opts.addNH && !BamReader::hasAuxField(bamInfo,"NH")){
-					int NH;
-					if(!BamReader::hasMultipleFragments(bamInfo) || BamReader::isFirstFragment(bamInfo)){
-						//first fragment
-						NH=i->second.firstAlignmentCount;
+	
+				if(i->second.firstAlignmentCount<=opts.maxHits && i->second.secondAlignmentCount<=opts.maxHits){
+					//only output these:
+					//TODO: do we need the best?
+					//can we directly write to a bam file?
+					
+					if(opts.addNH && !BamReader::hasAuxField(bamInfo,"NH")){
+						int NH;
+						if(!BamReader::hasMultipleFragments(bamInfo) || BamReader::isFirstFragment(bamInfo)){
+							//first fragment
+							NH=i->second.firstAlignmentCount;
+						}
+						else{
+							NH=i->second.secondAlignmentCount;
+						}
+						
+						BamReader::BamAuxStruct bas;
+						bas.type=BAMAUX_INTVALUE;
+						bas.intValue=NH;
+						
+						BamReader::appendAuxField(bamInfo,"NH",&bas);
+						
 					}
-					else{
-						NH=i->second.secondAlignmentCount;
-					}
 					
-					BamReader::BamAuxStruct bas;
-					bas.type=BAMAUX_INTVALUE;
-					bas.intValue=NH;
+					bam_write1(out->x.bam,bamInfo);
 					
-					BamReader::appendAuxField(bamInfo,"NH",&bas);
-					
+					outTotal++;
+				
 				}
-				
-				bam_write1(out->x.bam,bamInfo);
-			
 			}
 		}
+		
+		samclose(out);
+		samclose(bf);
+		
+		cerr<<"outReads\t"<<outTotal<<endl;
 	}
+		
 
-	samclose(out);
-	samclose(bf);
+	
 	bam_destroy1(bamInfo);
 	
-	
+	cerr<<"<Done>"<<endl;
 	return 0;
 }
 
@@ -261,7 +316,20 @@ int runGetUniqReads_useNHFlag(OptionStruct& opts){
 	samfile_t*  bf = samopen(opts.bamfile.c_str(),"rb",0);
 	bam1_t *bamInfo=bam_init1();
 	
-	samfile_t* out = samopen(opts.outfile.c_str(), "wb", bf->header);
+	
+	samfile_t* out=NULL;
+	
+	ofstream *statOutFile=NULL;
+	set<string>* qnamesRecord=NULL; //remember those outputed ones
+	
+	if(opts.printStatFile!=""){
+		statOutFile=new ofstream(opts.printStatFile.c_str());
+		qnamesRecord=new set<string>;
+	}
+	
+	
+	if(opts.outfile!="")
+		out = samopen(opts.outfile.c_str(), "wb", bf->header);
 	
 	if(!bf){
 		cerr<<"bam file "<<opts.bamfile<<" cannot be open"<<endl;
@@ -282,21 +350,44 @@ int runGetUniqReads_useNHFlag(OptionStruct& opts){
 		//unsigned char qual=BamReader::getMappingQual(bamInfo);
 		
 		int numHits=BamReader::getNumHits(bamInfo,-1);
+		string qname=BamReader::getQName(bamInfo);
+		
 		if(numHits==-1){
-			string qname=BamReader::getQName(bamInfo);
+			//string qname=BamReader::getQName(bamInfo);
 			cerr<<"Read at line "<<total<<" with name "<<qname<<" has no NH flag. abort";
 			break;
 		}
+		
+		if(statOutFile){
+			
+			if(qnamesRecord->find(qname)==qnamesRecord->end()){
+				(*statOutFile)<<qname<<"\t"<<numHits<<endl;
+				qnamesRecord->insert(qname);	
+			}
+		}
+		
 	
 		if(numHits<=opts.maxHits){	
-				
-			bam_write1(out->x.bam,bamInfo);
+			
+			if(out)
+				bam_write1(out->x.bam,bamInfo);
 				
 		}
 		
 	}
 	
-	samclose(out);
+	if(out)
+		samclose(out);
+	
+	if(statOutFile){
+		statOutFile->close();
+		delete statOutFile;
+	}
+	
+	if(qnamesRecord){
+		delete qnamesRecord;	
+	}
+	
 	samclose(bf);
 	bam_destroy1(bamInfo);
 	
@@ -304,11 +395,11 @@ int runGetUniqReads_useNHFlag(OptionStruct& opts){
 }
 
 int runGetUniqReads(OptionStruct& opts){
-	if(opts.useNHFlag){
-		return runGetUniqReads_useNHFlag(opts);
-	}else{
+	//if(opts.useNHFlag){
+	//	return runGetUniqReads_useNHFlag(opts);
+	//}else{
 		return runGetUniqReads_twoPass(opts);
-	}
+	//}
 }
 
 int main(int argc,char*argv[])
@@ -320,7 +411,9 @@ int main(int argc,char*argv[])
 	long_options.push_back("in=");
 	long_options.push_back("out=");
 	long_options.push_back("add-NH");
-	long_options.push_back("use-NH-flag");
+	//long_options.push_back("use-NH-flag"); //cancel use NH flag
+	long_options.push_back("print-NH-stat-to=");
+	
 	//long_options.push_bacl("out-best-qual");
 	
 	
@@ -352,16 +445,17 @@ int main(int argc,char*argv[])
 		return 1;	
 	}
 	
-	if(!hasOpt(optmap,"--out")){
+	/*if(!hasOpt(optmap,"--out")){
 		cerr<<"output bam file not specified. abort"<<endl;
 		printUsage(argsFinal.programName);
 		return 1;
-	}
+	}*/
 	
 	opts.bamfile=getOptValue(optmap,"--in");
-	opts.outfile=getOptValue(optmap,"--out");
+	opts.outfile=getOptValue(optmap,"--out","");
 	opts.addNH=hasOpt(optmap,"--add-NH");
-	opts.useNHFlag=hasOpt(optmap,"--use-NH-flag");
+	//opts.useNHFlag=hasOpt(optmap,"--use-NH-flag");
+	opts.printStatFile=getOptValue(optmap,"--print-NH-stat-to","");
 	//opts.bestQual=hasOpt(optmap,"--out-best-qual");
 		
 	
